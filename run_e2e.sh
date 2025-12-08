@@ -6,7 +6,10 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Function to cleanup background processes on exit
 cleanup() {
     echo "Stopping services..."
-    kill $(jobs -p) 2>/dev/null
+    # Use a portable check for jobs since xargs -r is not available on all macOS versions
+    if [ -n "$(jobs -p)" ]; then
+        jobs -p | xargs kill 2>/dev/null
+    fi
     exit
 }
 
@@ -32,5 +35,5 @@ echo "Waiting for services to initialize (10s)..."
 sleep 10
 
 echo "Running E2E Tests..."
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || { echo "Error: Failed to change directory to $SCRIPT_DIR"; exit 1; }
 bun test tests/e2e.test.ts
