@@ -1,8 +1,8 @@
-# MicroAI Paygate
-
-![MicroAI Paygate Architecture](public/rootimage.png)
-
-A high-performance, crypto-monetized AI microservice architecture implementing the x402 Protocol.
+<div align="center">
+    <h1>MicroAI Paygate</h1>
+    <img src="public/rootimage.png" alt="MicroAI Paygate Architecture" style="max-width:640px; width:100%; height:auto;" />
+    <p>A high-performance, crypto-monetized AI microservice architecture implementing the x402 Protocol.</p>
+</div>
 
 ## Overview
 
