@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  gateway:
+    build: ./gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - VERIFIER_URL=http://verifier:3002
+    depends_on:
+      - verifier
+    networks:
+      - microai-net
+
+  verifier:
+    build: ./verifier
+    ports:
+      - "3002:3002"
+    networks:
+      - microai-net
+
+  web:
+    build: ./web
+    ports:
+      - "3001:3001"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+    depends_on:
+      - gateway
+    networks:
+      - microai-net
+
+networks:
+  microai-net:
+    driver: bridge

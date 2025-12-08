@@ -1,0 +1,38 @@
+# MicroAI Paygate Tests
+
+This directory contains End-to-End (E2E) tests for the MicroAI Paygate system.
+
+## Prerequisites
+
+- [Bun](https://bun.sh) installed
+- The MicroAI Paygate stack running (`bun run stack` in the root directory)
+
+## Running E2E Tests
+
+1. Start the stack:
+   ```bash
+   bun run stack
+   ```
+
+2. Run the tests:
+   ```bash
+   bun test tests/e2e.test.ts
+   ```
+
+## Other Tests
+
+### Gateway (Go)
+Unit tests for the Go Gateway are located in `gateway/`.
+Run them with:
+```bash
+cd gateway
+go test -v
+```
+
+### Verifier (Rust)
+Unit tests for the Rust Verifier are located in `verifier/src/main.rs`.
+Run them with:
+```bash
+cd verifier
+cargo test
+```
