@@ -29,20 +29,6 @@ Thanks for considering a contribution! This project is open to issues, bug fixes
 - Follow existing language idioms: Go fmt/go vet style; Rust fmt/clippy where applicable.
 - New features must include tests (unit and/or E2E) covering the added behavior.
 
-## Commit Hygiene
-- Use meaningful commit messages (e.g., `fix: ...`, `feat: ...`, `docs: ...`).
-- Ensure `git status` is clean before opening a PR.
-- Squash locally only if it clarifies history; otherwise let reviewers guide.
-
-## Coding Standards
-- Keep changes minimal and focused; avoid large, unrelated refactors.
-- Add tests for new behavior; update existing tests if logic changes.
-- Prefer clear, concise documentation alongside code changes.
-
-## Commit Hygiene
-- Use meaningful commit messages (e.g., `fix: ...`, `feat: ...`, `docs: ...`).
-- Ensure `git status` is clean before opening a PR.
-
 ## Pull Requests
 - Describe the problem, the solution, and testing performed.
 - Link related issues if they exist.
