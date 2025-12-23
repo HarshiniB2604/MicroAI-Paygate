@@ -4,6 +4,14 @@
     <p>A high-performance, crypto-monetized AI microservice architecture implementing the x402 Protocol.</p>
 </div>
 
+## Documentation
+
+- [Getting Started](README.md#getting-started-local)
+- [Testing](README.md#testing)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Project Rules](RULES.md)
+- [License](LICENSE)
+
 ## Overview
 
 MicroAI Paygate demonstrates a decentralized payment layer for AI services. Instead of traditional subscriptions, it utilizes the HTTP 402 (Payment Required) status code to enforce per-request crypto micropayments. The system has been re-architected from a monolithic Node.js application into a distributed microservices stack to ensure maximum throughput, type safety, and cryptographic security.
@@ -56,15 +64,35 @@ The Verifier is a specialized computation unit designed for one task: Elliptic C
 
 ## Installation & Deployment
 
-### Quickstart (Local)
+### Getting Started (Local)
 
+**Prerequisites**
+- Bun
+- Go 1.21+
+- Rust/Cargo (latest stable)
+- Node.js (for Next.js tooling)
+
+**Clone & Install**
 ```bash
 git clone https://github.com/AnkanMisra/MicroAI-Paygate.git
 cd MicroAI-Paygate
 bun install
-# Optional: go mod tidy && cargo build
+go mod tidy -C gateway
+cargo build -q -C verifier
+```
+
+**Configure Environment**
+Copy `.env.example` to `.env` and fill values (see next section).
+
+**Run the Stack**
+```bash
 bun run stack
 ```
+
+**Run Tests**
+- E2E: `bun run test:e2e`
+- Gateway: `cd gateway && go test -v`
+- Verifier: `cd verifier && cargo test`
 
 ### Environment
 
@@ -149,6 +177,12 @@ cargo test
 - Port already in use: ensure 3000/3001/3002 are free or export alternative ports in env and update client config.
 - Missing OpenRouter key: E2E tests may pass signature validation but fail on AI response with 500.
 - Network errors inside Docker: use service names (`gateway:3000`, `verifier:3002`) instead of localhost.
+
+## References
+
+- HTTP 402 Payment Required (MDN): https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402
+- RFC 7231 Section 6.5.2 (Payment Required): https://www.rfc-editor.org/rfc/rfc7231#section-6.5.2
+- EIP-712 Typed Structured Data: https://eips.ethereum.org/EIPS/eip-712
 
 ## Contributing
 
