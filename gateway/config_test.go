@@ -1,26 +1,21 @@
 package main
 
-import (
-	"os"
-	"testing"
-)
+import "testing"
 
 func TestValidateConfig_MissingRequiredEnv(t *testing.T) {
-	// Ensure env var is not set
-	os.Unsetenv("OPENROUTER_API_KEY")
+	t.Setenv("OPENROUTER_API_KEY", "")
 
 	err := validateConfig()
 	if err == nil {
-		t.Fatalf("Expected error when OPENROUTER_API_KEY is missing, got nil")
+		t.Fatalf("expected error when OPENROUTER_API_KEY is missing, got nil")
 	}
 }
 
 func TestValidateConfig_WithRequiredEnv(t *testing.T) {
-	// Set required environment variables
-	os.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
 
 	err := validateConfig()
 	if err != nil {
-		t.Fatalf("Expected no error when all required environment variables are set, got: %v", err)
+		t.Fatalf("expected no error when OPENROUTER_API_KEY is set, got: %v", err)
 	}
 }
