@@ -148,7 +148,10 @@ func main() {
 		log.Println("Rate limiting enabled")
 	}
 
-	// Global request timeout middleware (default: 60s)
+	// Global request timeout middleware (default: 60s).
+	// Note: route-specific timeouts (e.g. for AI endpoints) may shorten this
+	// deadline; the middleware implementation always uses the earliest
+	// deadline when nested timeouts are present to avoid surprising behavior.
 	r.Use(RequestTimeoutMiddleware(getRequestTimeout()))
 
 	// Health check with shorter timeout (2s)
@@ -204,6 +207,7 @@ func handleSummarize(c *gin.Context) {
 
 	verifyBody, err := json.Marshal(verifyReq)
 	if err != nil {
+		log.Printf("error marshaling verification request: %v", err)
 		c.JSON(500, gin.H{"error": "Failed to create verification request"})
 		return
 	}

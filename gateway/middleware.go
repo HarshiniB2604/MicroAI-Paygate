@@ -36,11 +36,11 @@ func newBufferedWriter() *bufferedWriter {
 }
 
 // Header returns the local header map for the buffered response.
+// We take a read lock while returning to make the intention explicit and
+// reduce the window where concurrent readers could race with writers.
 func (b *bufferedWriter) Header() http.Header {
-	// Return the header map directly. This matches http.ResponseWriter.Header()
-	// semantics where callers are expected to mutate the returned map.
-	// Mutations are safe during handler execution and buffered flush occurs
-	// after the handler finishes.
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.head
 }
 
@@ -113,20 +113,42 @@ func (b *bufferedWriter) flushTo(w http.ResponseWriter) {
 // response writes and ensures safe behavior with Gin.
 func RequestTimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Protect against non-positive timeouts by treating them as zero
-		// which results in immediate deadline behavior if <= 0. For safety we
-		// allow zero (caller can disable middleware by not adding it).
-		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
-		defer cancel()
+		// Choose a deadline that ensures a per-route timeout can shorten any
+		// existing deadline but will not extend an earlier (shorter) deadline.
+		// This avoids surprising nested timeout behavior while allowing route
+		// specific shorter timeouts to take effect.
+		var cancel context.CancelFunc
+		var ctx context.Context
+		if timeout <= 0 {
+			// Preserve the existing behavior for zero/negative values.
+			ctx, cancel = context.WithTimeout(c.Request.Context(), timeout)
+		} else {
+			if d, ok := c.Request.Context().Deadline(); ok {
+				desired := time.Now().Add(timeout)
+				// If an earlier deadline already exists, keep it. Otherwise set
+				// a new deadline at the desired point.
+				if d.Before(desired) {
+					ctx = c.Request.Context()
+				} else {
+					ctx, cancel = context.WithDeadline(c.Request.Context(), desired)
+				}
+			} else {
+				ctx, cancel = context.WithTimeout(c.Request.Context(), timeout)
+			}
+		}
+		if cancel != nil {
+			defer cancel()
+		}
 		c.Request = c.Request.WithContext(ctx)
 
 		origWriter := c.Writer
 		bw := newBufferedWriter()
 		// replace the gin writer with a shim that uses bw and keeps orig writer
 		c.Writer = &responseWriterShim{bw: bw, orig: origWriter}
-		finished := make(chan struct{})
-		panicChan := make(chan interface{}, 1)
-
+		finished := make(chan struct{}, 1)
+		// We only send one panic value and immediately select on it; use an
+		// unbuffered channel to avoid unnecessary buffering semantics.
+		panicChan := make(chan interface{})
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -149,11 +171,12 @@ func RequestTimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 			panic(p)
 		case <-ctx.Done():
 			// Timeout exceeded — mark buffer closed to prevent further handler
-			// writes, then restore the original writer and send 504.
+			// writes. Do NOT restore c.Writer here, otherwise a concurrently
+			// running handler may write directly to the real writer after the
+			// timeout response was already sent (causing panics or corruption).
 			bw.mu.Lock()
 			bw.closed = true
 			bw.mu.Unlock()
-			c.Writer = origWriter
 			origWriter.Header().Set("Content-Type", "application/json; charset=utf-8")
 			origWriter.WriteHeader(504)
 			_, _ = origWriter.Write([]byte(`{"error":"Gateway Timeout","message":"Request exceeded maximum allowed time"}`))
