@@ -37,10 +37,11 @@ func newBufferedWriter() *bufferedWriter {
 
 // Header returns the local header map for the buffered response.
 func (b *bufferedWriter) Header() http.Header {
-	b.mu.RLock()
-	head := b.head
-	b.mu.RUnlock()
-	return head
+	// Return the header map directly. This matches http.ResponseWriter.Header()
+	// semantics where callers are expected to mutate the returned map.
+	// Mutations are safe during handler execution and buffered flush occurs
+	// after the handler finishes.
+	return b.head
 }
 
 func (b *bufferedWriter) Write(data []byte) (int, error) {
