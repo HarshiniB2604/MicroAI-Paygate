@@ -113,6 +113,9 @@ func main() {
 
 	r := gin.Default()
 
+	// VIBE FIX: Register the Correlation ID Middleware immediately
+	// This ensures every single request gets an ID before anything else happens.
+	r.Use(CorrelationIDMiddleware())
 	// Initialize Redis early to fail-fast if Redis required but unavailable
 	initRedis()
 
@@ -144,8 +147,8 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3001"},
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "X-402-Signature", "X-402-Nonce"},
-		ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After", "X-402-Receipt"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "X-402-Signature", "X-402-Nonce", "X-Correlation-ID"},                                                          // Added X-Correlation-ID
+		ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After", "X-402-Receipt", "X-Correlation-ID"}, // Added X-Correlation-ID
 		AllowCredentials: true,
 	}))
 
@@ -233,7 +236,7 @@ func handleSummarize(c *gin.Context) {
 		// Cache middleware always sets this as []byte, safe to assert
 		requestBody = body.([]byte)
 	}
-	
+
 	// Read body if not already available
 	if requestBody == nil {
 		// Read body with limit (only if middleware didn't process it)
@@ -337,6 +340,13 @@ func verifyPayment(ctx context.Context, signature, nonce string) (*VerifyRespons
 	}
 	vreq.Header.Set("Content-Type", "application/json")
 
+	// VIBE FIX: Pass Correlation ID to the Verifier Service
+	// CORRECT: Use the constant 'correlationIDKey' to retrieve the value
+	if cid, ok := ctx.Value(correlationIDKey).(string); ok {
+		vreq.Header.Set("X-Correlation-ID", cid)
+	}
+
+	// Use http.DefaultClient and rely on verifierCtx for timeouts/cancellation.
 	resp, err := http.DefaultClient.Do(vreq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("verifier request failed: %w", err)
@@ -471,6 +481,12 @@ func callOpenRouter(ctx context.Context, text string) (string, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+
+	// VIBE FIX: Pass Correlation ID to AI Service
+	// (Assuming the context has it, though OpenRouter might not use it, it's good practice)
+	if cid, ok := ctx.Value(correlationIDKey).(string); ok { // Changed to use correlationIDKey
+		req.Header.Set("X-Correlation-ID", cid)
+	}
 
 	// Use http.DefaultClient and rely on ctx for cancellation/timeouts.
 	resp, err := http.DefaultClient.Do(req)
