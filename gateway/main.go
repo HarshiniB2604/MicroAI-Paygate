@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -165,8 +166,11 @@ func main() {
 	// deadline when nested timeouts are present to avoid surprising behavior.
 	r.Use(RequestTimeoutMiddleware(getRequestTimeout()))
 
-	// Health check with shorter timeout (2s)
-	r.GET("/healthz", RequestTimeoutMiddleware(getHealthCheckTimeout()), handleHealth)
+	//health check if server is up
+	r.GET("/healthz", handleHealthz)
+
+	//readiness check
+	r.GET("/readyz", handleReadyz)
 
 	// AI endpoints with AI-specific timeout (30s)
 	aiGroup := r.Group("/api/ai")
@@ -527,10 +531,6 @@ func callOpenRouter(ctx context.Context, text string) (string, error) {
 	return content, nil
 }
 
-func handleHealth(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "gateway"})
-}
-
 // Rate Limiting Functions
 
 // initRateLimiters creates rate limiters for each tier
@@ -875,9 +875,9 @@ func getServerPrivateKey() (*ecdsa.PrivateKey, error) {
 		}
 
 		// Validate minimum key length to prevent trivially weak keys
-		// Keys shorter than 16 bytes (128 bits) are cryptographically insecure
-		if len(keyBytes) < 16 {
-			serverPrivateKeyErr = fmt.Errorf("private key too short: got %d bytes, expected at least 16 bytes (128 bits)", len(keyBytes))
+		// Keys shorter than 31 bytes are cryptographically insecure or malformed
+		if len(keyBytes) < 31 {
+			serverPrivateKeyErr = fmt.Errorf("private key too short: got %d bytes, expected at least 31 bytes", len(keyBytes))
 			return
 		}
 
@@ -903,4 +903,118 @@ func getServerPrivateKey() (*ecdsa.PrivateKey, error) {
 	})
 
 	return serverPrivateKey, serverPrivateKeyErr
+}
+
+// handleHealthz implements the liveness probe for the gateway service.
+// It returns a 200 OK status if the server is running and reachable.
+// Response format: {"status": "ok", "service": "gateway", "timestamp": <unix_time>}
+func handleHealthz(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "gateway", "timestamp": time.Now().Unix()})
+}
+
+// handleReadyz implements the readiness probe for the gateway service.
+// It performs a comprehensive health check by verifying:
+// 1. Connectivity to the Verifier service
+// 2. Availability of the OpenRouter API
+// 3. Self-health metrics (goroutine count, memory usage)
+// Returns 200 OK if all dependencies are healthy, otherwise 503 Service Unavailable.
+func handleReadyz(c *gin.Context) {
+	checks := make(map[string]interface{})
+
+	//1. check verifier connectivity
+	verifierStatus := checkVerifierHealth()
+	checks["verifier"] = verifierStatus
+
+	//2. Check OpenRouter availability
+	openRouterStatus := checkOpenRouterHealth()
+	checks["openrouter"] = openRouterStatus
+
+	//3. Self-health metrics
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	checks["gateway"] = gin.H{
+		"goroutines":      runtime.NumGoroutine(),
+		"memory_alloc_mb": memStats.Alloc / 1024 / 1024,
+		"memory_sys_mb":   memStats.Sys / 1024 / 1024,
+		"status":          "ok",
+	}
+	//Overall status logic
+	ready := verifierStatus == "ok" && openRouterStatus == "ok"
+
+	statusCode := http.StatusOK
+	if !ready {
+		statusCode = http.StatusServiceUnavailable
+	}
+	c.JSON(statusCode, gin.H{"ready": ready, "timestamp": time.Now().Unix(), "checks": checks})
+}
+
+// checkVerifierHealth pings the Verifier service's health endpoint.
+// It uses a 2-second timeout to prevent hanging.
+// Returns:
+// - "ok": Verifier is healthy (200 OK)
+// - "degraded": Verifier is reachable but returned non-200 status
+// - "unreachable": Verifier could not be contacted
+var checkVerifierHealth = func() string {
+	verifierURL := os.Getenv("VERIFIER_URL")
+	if verifierURL == "" {
+		verifierURL = "http://127.0.0.1:3002"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", verifierURL+"/health", nil)
+	if err != nil {
+		return "unreachable"
+	}
+	//req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := http.DefaultClient.Do(req)
+
+	if err != nil {
+		return "unreachable"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "degraded"
+	}
+	return "ok"
+}
+
+// checkOpenRouterHealth checks the availability of the OpenRouter API.
+// It attempts to fetch the list of models with a 2-second timeout.
+// Returns:
+// - "ok": API is reachable (200 OK)
+// - "unconfigured": OPENROUTER_API_KEY is not set
+// - "degraded": API is reachable but returned non-200 status
+// - "unreachable": API could not be contacted
+var checkOpenRouterHealth = func() string {
+	apiKey := os.Getenv("OPENROUTER_API_KEY")
+	if apiKey == "" {
+		return "unconfigured"
+	}
+	baseURL := os.Getenv("OPENROUTER_URL")
+	if baseURL == "" {
+		baseURL = "https://openrouter.ai"
+	}
+	healthURL := strings.TrimSuffix(baseURL, "/") + "/api/v1/models"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return "unreachable"
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := http.DefaultClient.Do(req)
+
+	if err != nil {
+		return "unreachable"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "degraded"
+	}
+	return "ok"
 }
