@@ -672,4 +672,37 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(resp.error.unwrap().contains("Invalid request"));
     }
+    #[tokio::test]
+    async fn test_verify_signature_oversized_payload() {
+        use axum::{
+            body::Body,
+            http::{Request, StatusCode},
+        };
+        use tower::ServiceExt; // for `oneshot`
+
+        // 1. Create the app with the same limit logic as your main()
+        let limit = get_max_body_size();
+        let app = Router::new()
+            .route("/verify", post(verify_signature))
+            .layer(DefaultBodyLimit::max(limit));
+
+        // 2. Create a "too large" payload (2MB)
+        let large_data = vec![b'a'; 2 * 1024 * 1024];
+        let req = Request::builder()
+            .method("POST")
+            .uri("/verify")
+            .header("content-type", "application/json")
+            .header("x-correlation-id", "test-oversized")
+            .body(Body::from(large_data))
+            .unwrap();
+
+        // 3. Send the request through the app
+        let response = app.oneshot(req).await.unwrap();
+
+        // 4. Verify the results match the Admin's requirements
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE); // Verifies 413
+
+        // Check if correlation ID is preserved in response headers
+        assert!(response.headers().contains_key("x-correlation-id"));
+    }
 }
